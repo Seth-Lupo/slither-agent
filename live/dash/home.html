@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slither Agents</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#111827;--ink2:#4b5563;--line:#e5e7eb;--accent:#2563eb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0e13;--card:#131820;--ink:#e5e7eb;--ink2:#9ca3af;--line:#232a35;--accent:#60a5fa}}
+:root[data-theme="dark"]{--bg:#0b0e13;--card:#131820;--ink:#e5e7eb;--ink2:#9ca3af;--line:#232a35;--accent:#60a5fa}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:28px 16px}h1{font-size:22px;margin:0 0 4px}.sub{color:var(--ink2);font-size:14px;margin-bottom:18px}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.g{grid-template-columns:1fr}}
+a.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;color:inherit;text-decoration:none}
+a.card:hover{border-color:var(--accent)}a.card img{width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:8px;background:#000;display:block;margin-bottom:10px}
+h2{font-size:17px;margin:0 0 4px}
+</style>
+</head>
+<body><div class="wrap">
+<h1>Slither agents</h1><div class="sub">Two sessions on 8×H200: the policy in real games, and the GPU self-play league that trains it.</div>
+<div class="g">
+  <a class="card" href="live/"><img id="li" alt="live game"><h2>Live games →</h2><div class="sub" style="margin:0">80 real slither.io games: every game's screen next to what the policy sees, survival and length vs the previous live agent.</div></a>
+  <a class="card" href="sp/"><img id="si" alt="self-play arena"><h2>Self-play →</h2><div class="sub" style="margin:0">960k snakes on the GPU simulator: training curves, the league, one arena you can click into.</div></a>
+</div></div>
+<script>
+const r=()=>{const t=Date.now();document.getElementById('li').src='live/data/s/0.jpg?'+t;document.getElementById('si').src='sp/data/arena.jpg?'+t};r();setInterval(r,5000);
+</script>
+</body></html>

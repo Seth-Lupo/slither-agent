@@ -1,0 +1,154 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dyna-Q slither</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{color-scheme:light;--bg:#f6f6f4;--surface:#fcfcfb;--fg:#0b0b0b;--fg2:#52514e;--mut:#8a8984;--line:#e6e5e1;
+ --s1:#2a78d6;--s2:#eb6834;--base:#8a8984;--good:#008300;--bad:#e34948;--warn:#c98500}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#121211;--surface:#1a1a19;--fg:#f0efec;--fg2:#c3c2b7;--mut:#8f8e88;--line:#2e2e2b;
+ --s1:#3987e5;--s2:#d95926;--base:#8f8e88;--good:#2fa52f;--bad:#e66767;--warn:#c98500}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#121211;--surface:#1a1a19;--fg:#f0efec;--fg2:#c3c2b7;--mut:#8f8e88;--line:#2e2e2b;--s1:#3987e5;--s2:#d95926;--base:#8f8e88;--good:#2fa52f;--bad:#e66767}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:20px;font-weight:600;margin:0}.cfg{color:var(--fg2);font-size:13px;margin-top:4px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--fg2);border:1px solid var(--line);border-radius:999px;padding:4px 10px;background:var(--surface)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.k{background:var(--surface);padding:14px 16px}.k .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.k .l{font-size:12px;color:var(--fg2)}.k .d{font-size:12px;color:var(--mut);margin-top:2px;font-variant-numeric:tabular-nums}
+h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:28px 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card h3{font-size:14px;font-weight:600;margin:0}.card p{font-size:12.5px;color:var(--fg2);margin:2px 0 10px}
+.chart{position:relative;height:220px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--fg2);margin-bottom:6px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend b{display:inline-block;width:14px;height:2px;border-radius:1px}.legend b.dash{background:repeating-linear-gradient(90deg,var(--base) 0 4px,transparent 4px 7px)!important}
+img{display:block;width:100%;border-radius:6px}
+#live{cursor:pointer}
+.watch{display:none;grid-template-columns:minmax(0,420px) 1fr;gap:20px}@media (max-width:760px){.watch{grid-template-columns:1fr}}
+.watch img{image-rendering:pixelated;aspect-ratio:1;background:#000}
+.qb{display:grid;grid-template-columns:110px 1fr 46px;gap:8px;align-items:center;font-size:12px;color:var(--fg2);margin:3px 0;font-variant-numeric:tabular-nums}
+.qb div{height:8px;border-radius:0 4px 4px 0;background:var(--line)}.qb.sel{color:var(--fg);font-weight:600}.qb.sel div{background:var(--s1)}
+.qb div.on{background:var(--mut)}
+details{margin-top:28px}summary{cursor:pointer;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--mut);font-weight:500}td:first-child,th:first-child{text-align:left}.scroll{overflow-x:auto}
+a{color:var(--s1)}
+</style></head><body><main>
+<header><div><h1>Dyna-Q on live slither.io</h1>
+<div class="cfg">Frozen s150p world-model features · double DQN, γ = 0.98 per 0.3 s decision · reward = Δ log length · one-step imagined transitions</div></div>
+<div class="pill" id="status"><i></i><span>loading</span></div></header>
+
+<div class="kpis" id="kpis"></div>
+
+<h2>Is it learning?</h2>
+<div class="grid">
+ <div class="card"><h3>Episode return</h3><p>log(final length / start length), mean per 10-min bin. Greedy = sessions with ε &lt; 0.01; dashed = random policy before the first update.</p>
+  <div class="legend"><span><b style="background:var(--s1)"></b>greedy</span><span><b style="background:var(--s2)"></b>exploring</span><span><b class="dash"></b>random</span></div><div class="chart"><canvas id="c_ret"></canvas></div></div>
+ <div class="card"><h3>Length reached by greedy sessions</h3><p>Median final length per 10-min bin. The latest bin is partial and dips after actor restarts.</p>
+  <div class="legend"><span><b style="background:var(--s1)"></b>median final length</span><span><b class="dash"></b>random policy</span></div><div class="chart"><canvas id="c_len"></canvas></div></div>
+</div>
+
+<h2>Is learning stable?</h2>
+<div class="grid">
+ <div class="card"><h3>TD loss</h3><p>Huber loss of Q against its bootstrapped target. Real and imagined transitions; should settle, not climb.</p>
+  <div class="legend"><span><b style="background:var(--s1)"></b>real</span><span><b style="background:var(--s2)"></b>imagined</span></div><div class="chart"><canvas id="c_td"></canvas></div></div>
+ <div class="card"><h3>Value estimate</h3><p>Mean Q on replayed decisions (discounted future reward, ×10 log-length units). Steady growth while greedy return is flat suggests over-estimation.</p>
+  <div class="chart" style="margin-top:22px"><canvas id="c_q"></canvas></div></div>
+</div>
+
+<h2>Live <span style="text-transform:none;letter-spacing:0;font-weight:400">· click a game to follow it</span></h2>
+<div class="card watch" id="watch"><div><img id="wimg" alt="selected session, agent's 128×128 view"></div>
+ <div><div style="display:flex;justify-content:space-between;align-items:baseline"><h3 id="wt">Session</h3><a href="#" id="wclose">close</a></div>
+ <p id="wsub"></p><div id="wstat" style="margin-bottom:10px"></div><div id="wbars"></div></div></div>
+<div class="card" style="margin-top:16px"><img id="live" alt="latest frame of every session" style="max-width:760px;margin:0 auto"></div>
+
+<h2>World model</h2>
+<div class="grid">
+ <div class="card"><h3>Imagined next state by action</h3><p>Real frame, then the world model's frame 0.3 s later under hard left / straight / hard right. Refreshed every 5 min.</p><img id="imag" alt="imagination preview" style="max-width:380px"></div>
+ <div class="card"><h3>Death prediction</h3><p>Mean predicted p(death) on decisions that ended in death vs. those that did not (training batches, death up-weighted ×20).</p>
+  <div class="legend"><span><b style="background:var(--s2)"></b>died</span><span><b style="background:var(--s1)"></b>survived</span></div><div class="chart"><canvas id="c_d"></canvas></div></div>
+</div>
+
+<details><summary>Diagnostics</summary>
+ <div class="grid" style="margin-top:12px">
+  <div class="card"><h3>System</h3><div class="scroll"><table id="sys"></table></div></div>
+  <div class="card"><h3>Proxies</h3><div class="scroll"><table id="ptab"></table></div></div>
+ </div>
+ <div class="card" style="margin-top:16px"><h3>Recent episodes</h3><div class="scroll"><table id="etab"></table></div></div>
+</details>
+</main>
+<script>
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const f=(x,d=2)=>x==null||!isFinite(x)?'–':(+x).toFixed(d);
+const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:NaN, med=a=>{if(!a.length)return NaN;const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2};
+async function get(p){try{const r=await fetch(p+'?'+Date.now(),{cache:'no-store'});return r.ok?r:null}catch(e){return null}}
+async function jl(p){const r=await get(p);if(!r)return[];return (await r.text()).trim().split('\n').map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean)}
+async function js(p){const r=await get(p);return r?r.json().catch(()=>null):null}
+const charts={};
+function chart(id,sets,o={}){
+ const ds=sets.map(s=>({label:s.l,data:s.d,borderColor:s.c,backgroundColor:s.c,borderWidth:2,borderDash:s.dash?[4,3]:[],pointRadius:0,pointHoverRadius:4,tension:.25,spanGaps:true}));
+ const ax={grid:{color:css('--line'),drawTicks:false},border:{display:false},ticks:{color:css('--mut'),padding:6,maxTicksLimit:6,font:{size:11}}};
+ const opt={animation:false,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+  plugins:{legend:{display:false},tooltip:{backgroundColor:css('--surface'),titleColor:css('--fg'),bodyColor:css('--fg2'),borderColor:css('--line'),borderWidth:1,
+   callbacks:{title:i=>i.length?`${f(i[0].parsed.x,2)} h`:'',label:c=>` ${c.dataset.label}: ${f(c.parsed.y,o.dp??2)}`}}},
+  scales:{x:{type:'linear',...ax,title:{display:true,text:'hours',color:css('--mut'),font:{size:11}}},y:{...ax,min:o.ymin,title:{display:!!o.y,text:o.y||'',color:css('--mut'),font:{size:11}}}}};
+ if(charts[id]){charts[id].data.datasets=ds;charts[id].update('none');return}
+ charts[id]=new Chart(document.getElementById(id),{type:'line',data:{datasets:ds},options:opt});
+}
+function bins(eps,t0,key,agg,W=600){const m=new Map();for(const e of eps){const k=Math.floor((e.t-t0)/W);(m.get(k)||m.set(k,[]).get(k)).push(e[key])}
+ return [...m.entries()].sort((a,b)=>a[0]-b[0]).filter(([,v])=>v.length>=5).map(([k,v])=>({x:(k+.5)*W/3600,y:agg(v)}))}
+const ACT=[];for(const t of [-90,-45,-20,0,20,45,90])for(const b of [0,1])ACT.push([t,b]);
+const nm=([t,b])=>(t==0?'straight':(t>0?'left ':'right ')+Math.abs(t)+'°')+(b?' + boost':'');
+
+async function tick(){
+ const [E,L,A,S]=await Promise.all([jl('data/episodes.jsonl'),jl('data/learner.jsonl'),js('data/actor.json'),js('data/sys.json')]);
+ const IM=(await Promise.all([2,3,4,5,6,7].map(r=>js(`data/imag_${r}.json`)))).filter(Boolean);
+ document.getElementById('live').src='data/live.jpg?'+Date.now(); document.getElementById('imag').src='data/imagine.jpg?'+Date.now();
+ if(!E.length)return;
+ const t0=E[0].t, now=Date.now()/1000, hrs=(now-t0)/3600;
+ const G=E.filter(e=>e.eps<0.01&&e.ver>=0), X=E.filter(e=>e.eps>=0.01&&e.ver>=0), R0=E.filter(e=>e.ver<0);
+ const rRet=mean(R0.map(e=>e.ret)), rLen=med(R0.map(e=>e.final));
+ const g100=G.slice(-100), sess=A?A.sessions:[], alive=sess.filter(s=>s.alive).length, l=L[L.length-1]||{};
+ const imps=IM.reduce((s,x)=>s+(x.per_s||0),0), age=A?now-A.t:1e9;
+ const st=document.getElementById('status'), ok=age<60&&alive>sess.length*0.4;
+ st.querySelector('i').style.background=ok?css('--good'):css('--bad');
+ st.querySelector('span').textContent=ok?`running · ${f(hrs,1)} h · updated ${f(age,0)} s ago`:`stale or degraded · actor update ${f(age,0)} s ago`;
+ const K=[
+  ['Greedy return (last 100)',f(mean(g100.map(e=>e.ret)),2),`random policy ${f(rRet,2)}`],
+  ['Greedy median final length',f(med(g100.map(e=>e.final)),0),`random policy ${f(rLen,0)} · best ever ${Math.max(...E.map(e=>e.best))}`],
+  ['Greedy median survival',f(med(g100.map(e=>e.seconds)),0)+' s',`${G.length} greedy episodes`],
+  ['Experience',`${f(A&&A.dps,0)}/s`,`real decisions · ${f(imps,0)}/s imagined`],
+  ['Learner',(l.step??0).toLocaleString(),`updates · policy v${A?A.ver:'–'} · ${alive}/${sess.length} games live`]];
+ document.getElementById('kpis').innerHTML=K.map(([a,b,c])=>`<div class="k"><div class="l">${a}</div><div class="v">${b}</div><div class="d">${c}</div></div>`).join('');
+ const end=Math.max(hrs,.2), base=(v)=>[{x:0,y:v},{x:end,y:v}];
+ chart('c_ret',[{l:'greedy',d:bins(G,t0,'ret',mean),c:css('--s1')},{l:'exploring',d:bins(X,t0,'ret',mean),c:css('--s2')},{l:'random',d:base(rRet),c:css('--base'),dash:1}],{y:'return'});
+ chart('c_len',[{l:'median final length',d:bins(G,t0,'final',med),c:css('--s1')},{l:'random policy',d:base(rLen),c:css('--base'),dash:1}],{y:'length',dp:0,ymin:0});
+ const lx=x=>(x.t-t0)/3600;
+ chart('c_td',[{l:'real',d:L.filter(x=>x.step>0).map(x=>({x:lx(x),y:x.q_loss_real})),c:css('--s1')},{l:'imagined',d:L.filter(x=>x.q_loss_imag>0).map(x=>({x:lx(x),y:x.q_loss_imag})),c:css('--s2')}],{y:'Huber loss',dp:3,ymin:0});
+ chart('c_q',[{l:'mean Q',d:L.filter(x=>x.step>0).map(x=>({x:lx(x),y:x.q_mean})),c:css('--s1')}],{y:'Q',ymin:0});
+ chart('c_d',[{l:'died',d:L.filter(x=>x.step>0).map(x=>({x:lx(x),y:x.pdeath_dead})),c:css('--s2')},{l:'survived',d:L.filter(x=>x.step>0).map(x=>({x:lx(x),y:x.pdeath_alive})),c:css('--s1')}],{y:'p(death)',dp:3,ymin:0});
+ if(S){const g=S.gpus||[];document.getElementById('sys').innerHTML=
+  `<tr><th>GPU</th><th>role</th><th>util</th><th>memory</th></tr>`+g.map(x=>`<tr><td>${x.i}</td><td style="text-align:left">${x.i==0?'actor':x.i==1?'learner':'imagination'}</td><td>${x.util}%</td><td>${f(x.mem/1024,1)} GB</td></tr>`).join('')+
+  `<tr><td>CPU load</td><td></td><td>${f(S.load,0)} / ${S.cpus}</td><td></td></tr><tr><td>replay</td><td style="text-align:left">real / imagined</td><td colspan="2">${(l.real_n??0).toLocaleString()} / ${(l.imag_n??0).toLocaleString()}</td></tr>`}
+ const P={};for(const s of sess){const p=P[s.proxy]=P[s.proxy]||{a:0,n:0,e:0,x:0,err:''};p.n++;p.a+=s.alive?1:0;p.e+=s.episodes;p.x+=s.fails;if(s.err)p.err=s.err}
+ document.getElementById('ptab').innerHTML='<tr><th>proxy</th><th>live</th><th>episodes</th><th>failures</th><th style="text-align:left">last error</th></tr>'+
+  Object.entries(P).map(([k,p])=>`<tr><td>p${k}</td><td>${p.a}/${p.n}</td><td>${p.e}</td><td>${p.x}</td><td style="text-align:left;color:var(--mut)">${p.err.slice(0,48)}</td></tr>`).join('');
+ document.getElementById('etab').innerHTML='<tr><th>time</th><th>session</th><th>ε</th><th>seconds</th><th>length</th><th>return</th><th>end</th></tr>'+
+  E.slice(-12).reverse().map(e=>`<tr><td>${new Date(e.t*1000).toLocaleTimeString()}</td><td>s${e.sid}</td><td>${f(e.eps,3)}</td><td>${f(e.seconds,0)}</td><td>${e.start} → ${e.final} (best ${e.best})</td><td>${f(e.ret,2)}</td><td>${e.died?'died':'cut'}</td></tr>`).join('');
+}
+
+let W=null,WT=null;
+document.getElementById('live').onclick=e=>{const im=e.target,r=im.getBoundingClientRect(),T=im.naturalWidth/8;
+ watch(Math.floor((e.clientY-r.top)*im.naturalHeight/r.height/T)*8+Math.floor((e.clientX-r.left)*im.naturalWidth/r.width/T))};
+document.getElementById('wclose').onclick=e=>{e.preventDefault();W=null;clearInterval(WT);document.getElementById('watch').style.display='none'};
+function watch(sid){W=sid;clearInterval(WT);const b=document.getElementById('watch');b.style.display='grid';b.scrollIntoView({behavior:'smooth',block:'start'});wtick();WT=setInterval(wtick,300)}
+async function wtick(){if(W==null)return;const sid=W,im=new Image();im.onload=()=>{if(W==sid)document.getElementById('wimg').src=im.src};im.src=`data/s/${sid}.jpg?${Date.now()}`;
+ const d=await js(`data/s/${sid}.json`);if(!d||W!=sid)return;const age=Date.now()/1000-d.t;
+ document.getElementById('wt').textContent=`Session ${sid}`;
+ document.getElementById('wsub').textContent=`proxy p${d.proxy} · ε = ${f(d.eps,3)} · policy v${d.ver} · ${d.alive?'alive':'respawning'}${age>3?` · no frame for ${f(age,0)} s`:''}`;
+ document.getElementById('wstat').innerHTML=`<div style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums">${d.score}</div><div style="font-size:12px;color:var(--fg2)">length · best ${d.best} · alive ${f(d.ep_s,0)} s · action <b style="color:var(--fg)">${nm(ACT[d.a])}</b> (${d.greedy?'greedy':'random'})</div>`;
+ const q=d.q||[],mn=Math.min(...q),sp=Math.max(1e-6,Math.max(...q)-mn);
+ document.getElementById('wbars').innerHTML=q.length?'<div style="font-size:12px;color:var(--mut);margin-bottom:4px">Q per action</div>'+q.map((v,i)=>`<div class="qb ${i==d.a?'sel':''}"><span>${nm(ACT[i])}</span><div style="width:${4+96*(v-mn)/sp}%"></div><span>${f(v,2)}</span></div>`).join(''):''}
+tick();setInterval(tick,15000);
+</script></body></html>

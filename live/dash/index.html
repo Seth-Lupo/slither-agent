@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slither Live Games</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#111827;--ink2:#4b5563;--mute:#9ca3af;--line:#e5e7eb;--cur:#0f9d6b;--snap:#d97706;--accent:#2563eb;--bad:#dc2626;--good:#0f9d6b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0e13;--card:#131820;--ink:#e5e7eb;--ink2:#9ca3af;--mute:#6b7280;--line:#232a35;--cur:#34d399;--snap:#f59e0b;--accent:#60a5fa;--bad:#f87171;--good:#34d399}}
+:root[data-theme="dark"]{--bg:#0b0e13;--card:#131820;--ink:#e5e7eb;--ink2:#9ca3af;--mute:#6b7280;--line:#232a35;--cur:#34d399;--snap:#f59e0b;--accent:#60a5fa;--bad:#f87171;--good:#34d399}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+a{color:var(--accent)}.wrap{max-width:1400px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:20px;margin:0;font-weight:650}h2{font-size:13px;margin:0 0 10px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em}
+.sub{color:var(--ink2);font-size:13px}
+.grid{display:grid;gap:12px}.k6{grid-template-columns:repeat(6,1fr)}.c2{grid-template-columns:1fr 1fr}
+@media(max-width:900px){.k6{grid-template-columns:repeat(3,1fr)}}@media(max-width:640px){.k6{grid-template-columns:repeat(2,1fr)}.c2{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.kpi .l{font-size:12px;color:var(--ink2)}.kpi .v{font-size:24px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}.kpi .d{font-size:12px;color:var(--mute);margin-top:2px}
+section{margin-top:18px}svg{display:block;width:100%;height:auto}.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);margin-bottom:6px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:pointer}
+.tile img{width:100%;aspect-ratio:2/1;display:block;background:#000;image-rendering:pixelated}
+.tile .c{display:flex;justify-content:space-between;font-size:12px;padding:5px 8px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.tile.dead{opacity:.55}.tag{font-size:11px;padding:0 5px;border-radius:4px;border:1px solid var(--line);margin-left:4px}
+#big{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center;z-index:9;padding:16px}
+#big img{width:min(1100px,100%);image-rendering:pixelated;border-radius:8px}#big .c{color:#e5e7eb;text-align:center;margin-top:8px;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}td{padding:5px 0;border-bottom:1px solid var(--line)}td:last-child{text-align:right}td:first-child{color:var(--ink2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div><div class="sub" style="margin-bottom:4px"><a href="../">← home</a> · <a href="../sp/">self-play</a></div>
+  <h1>Slither live games</h1><div class="sub">The self-play policy playing real slither.io (80 games via 20 proxies), still learning with PPO · reward +1·Δlog length, +17 per kill, −6 death · every 4th game plays greedily (eval)</div></div>
+  <div class="sub" id="status">loading…</div>
+</header>
+<div class="grid k6" id="kpis"></div>
+<section class="grid c2">
+  <div class="card"><h2>Survival per game (s, rolling median of 50)</h2><div class="legend"><span><i style="background:var(--cur)"></i>sampling</span><span><i style="background:var(--accent)"></i>greedy eval</span><span><i style="background:var(--mute)"></i>v3 baseline (sampling)</span></div><div id="ch_surv"></div></div>
+  <div class="card"><h2>Best length per game (rolling median of 50)</h2><div class="legend"><span><i style="background:var(--cur)"></i>sampling</span><span><i style="background:var(--accent)"></i>greedy eval</span><span><i style="background:var(--mute)"></i>v3 baseline (sampling)</span></div><div id="ch_best"></div></div>
+</section>
+<section>
+  <h2>Games · left: game screen · right: what the policy sees (enemy bodies green, own body blue, heads white, food purple, edge red) · click to enlarge</h2>
+  <div class="tiles" id="tiles"></div>
+</section>
+</div>
+<div id="big" onclick="BIG=null;this.style.display='none'"><div><img id="bigimg"><div class="c" id="bigcap"></div></div></div>
+<script>
+const $=id=>document.getElementById(id), css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt=(x,d=1)=>x==null||isNaN(x)?'–':(+x).toFixed(d);
+let BIG=null, SESS=[], BASE=null;
+const med=a=>{if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);return s[s.length>>1]};
+function roll(E,key,w=50){const o=[];for(let i=0;i<E.length;i++){if(i+1<Math.min(w,10))continue;o.push([E[i].t,med(E.slice(Math.max(0,i-w+1),i+1).map(e=>e[key]))])}return o}
+function chart(el,series,base){
+  const W=560,H=200,p={l:40,r:10,t:8,b:22};const all=series.flatMap(s=>s.pts);
+  if(!all.length){$(el).innerHTML='<div class="sub">waiting for finished games…</div>';return}
+  const x0=Math.min(...all.map(p=>p[0])),x1=Math.max(...all.map(p=>p[0]))||x0+1;let y1=Math.max(...all.map(p=>p[1]),base||0)*1.1||1;
+  const X=x=>p.l+(x-x0)/(x1-x0||1)*(W-p.l-p.r),Y=y=>H-p.b-y/y1*(H-p.t-p.b);
+  let g=`<svg viewBox="0 0 ${W} ${H}">`;
+  for(let i=0;i<=4;i++){const y=y1*i/4;g+=`<line x1="${p.l}" x2="${W-p.r}" y1="${Y(y)}" y2="${Y(y)}" stroke="${css('--line')}"/><text x="${p.l-6}" y="${Y(y)+4}" font-size="10" text-anchor="end" fill="${css('--mute')}">${y>=100?Math.round(y):y.toFixed(1)}</text>`}
+  if(base!=null)g+=`<line x1="${p.l}" x2="${W-p.r}" y1="${Y(base)}" y2="${Y(base)}" stroke="${css('--mute')}" stroke-dasharray="4 4" stroke-width="1.5"/>`;
+  for(const s of series)if(s.pts.length)g+=`<path d="${s.pts.map((q,i)=>(i?'L':'M')+X(q[0]).toFixed(1)+','+Y(q[1]).toFixed(1)).join('')}" fill="none" stroke="${css(s.c)}" stroke-width="2"/>`;
+  const tl=t=>new Date(t*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  g+=`<text x="${p.l}" y="${H-6}" font-size="10" fill="${css('--mute')}">${tl(x0)}</text><text x="${W-p.r}" y="${H-6}" font-size="10" text-anchor="end" fill="${css('--mute')}">${tl(x1)}</text></svg>`;
+  $(el).innerHTML=g}
+async function j(u){try{const r=await fetch(u+'?'+Date.now());return r.ok?await r.json():null}catch(e){return null}}
+async function lines(u){try{const r=await fetch(u+'?'+Date.now());if(!r.ok)return[];return(await r.text()).trim().split('\n').filter(Boolean).map(l=>JSON.parse(l))}catch(e){return[]}}
+function drawTiles(){
+  const el=$('tiles');
+  if(el.children.length!==SESS.length){el.innerHTML=SESS.map(s=>`<div class="tile" id="t${s.sid}" onclick="BIG=${s.sid};$('big').style.display='flex';refreshBig()"><img loading="lazy"><div class="c"><span></span><span></span></div></div>`).join('')}
+  for(const s of SESS){const t=$('t'+s.sid);if(!t)continue;t.classList.toggle('dead',!s.alive);
+    t.querySelector('img').src=`data/s/${s.sid}.jpg?${Math.floor(Date.now()/2000)}`;
+    const c=t.querySelectorAll('.c span');c[0].innerHTML=`#${s.sid}${s.greedy?'<span class="tag">eval</span>':''}${s.alive?'':' <span class="tag">respawning</span>'}`;
+    c[1].textContent=`length ${s.score}`}}
+async function refreshBig(){if(BIG==null)return;$('bigimg').src=`data/s/${BIG}.jpg?${Date.now()}`;const i=await j(`data/s/${BIG}.json`);
+  if(i)$('bigcap').textContent=`game #${BIG}${i.greedy?' (greedy eval)':''} · length ${i.score} · best ${i.best} · kills ${i.kills} · alive ${fmt(i.ep_s,0)} s${i.boost?' · boosting':''} · policy v${i.ver} — click to close`}
+async function tick(){
+  const acts=(await Promise.all([0,1,2,3,4,5,6,7,8,9].map(r=>j(`data/actor_${r}.json`)))).filter(Boolean);
+  SESS=acts.flatMap(a=>a.sessions).sort((a,b)=>a.sid-b.sid);
+  const E=(await lines('data/episodes.jsonl')).filter(e=>e.died);BASE=BASE||await j('data/baseline.json');
+  const L=await j('data/learner.json');const S=E.filter(e=>!e.greedy),G=E.filter(e=>e.greedy);const last=a=>a.slice(-100);
+  const alive=SESS.filter(s=>s.alive).length,dps=acts.reduce((a,x)=>a+x.dps,0);
+  const k=[['Games playing',`${alive}/${SESS.length}`,'live sessions'],['Decisions/s',fmt(dps,0),'all games'],['Policy version',L?L.ver:0,L?`last update ${fmt(L.steps,0)} steps`:'no update yet'],
+    ['Survival (median)',fmt(med(last(S).map(e=>e.seconds)),0)+' s',`last 100 games · v3 ${BASE?fmt(BASE.sample.surv_med,0):'–'} s`],
+    ['Best length (median)',fmt(med(last(S).map(e=>e.best)),0),`last 100 games · v3 ${BASE?fmt(BASE.sample.best_med,0):'–'}`],
+    ['Kills per game',fmt(last(E).reduce((a,e)=>a+(e.kills||0),0)/Math.max(1,last(E).length),2),`${E.length} games finished`]];
+  $('kpis').innerHTML=k.map(x=>`<div class="card kpi"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="d">${x[2]}</div></div>`).join('');
+  chart('ch_surv',[{pts:roll(S,'seconds'),c:'--cur'},{pts:roll(G,'seconds'),c:'--accent'}],BASE?BASE.sample.surv_med:null);
+  chart('ch_best',[{pts:roll(S,'best'),c:'--cur'},{pts:roll(G,'best'),c:'--accent'}],BASE?BASE.sample.best_med:null);
+  drawTiles();refreshBig();
+  $('status').textContent='updated '+new Date().toLocaleTimeString()}
+tick();setInterval(tick,4000);
+</script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Slither RL</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{color-scheme:light;--bg:#f6f6f4;--surface:#fcfcfb;--fg:#0b0b0b;--fg2:#52514e;--mut:#8a8984;--line:#e6e5e1;--s1:#2a78d6;--s2:#eb6834;--base:#8a8984;--good:#008300;--bad:#e34948}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#121211;--surface:#1a1a19;--fg:#f0efec;--fg2:#c3c2b7;--mut:#8f8e88;--line:#2e2e2b;--s1:#3987e5;--s2:#d95926;--base:#8f8e88;--good:#2fa52f;--bad:#e66767}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#121211;--surface:#1a1a19;--fg:#f0efec;--fg2:#c3c2b7;--mut:#8f8e88;--line:#2e2e2b;--s1:#3987e5;--s2:#d95926;--base:#8f8e88;--good:#2fa52f;--bad:#e66767}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 ui-sans-serif,system-ui,-apple-system,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:20px;font-weight:600;margin:0}.cfg{color:var(--fg2);font-size:13px;margin-top:4px;max-width:760px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--fg2);border:1px solid var(--line);border-radius:999px;padding:4px 10px;background:var(--surface)}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--mut)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:24px}
+.k{background:var(--surface);padding:14px 16px}.k .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.k .l{font-size:12px;color:var(--fg2)}.k .d{font-size:12px;color:var(--mut);margin-top:2px;font-variant-numeric:tabular-nums}
+h2{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:28px 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.card h3{font-size:14px;font-weight:600;margin:0}.card p{font-size:12.5px;color:var(--fg2);margin:2px 0 10px}
+.chart{position:relative;height:220px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--fg2);margin-bottom:6px;flex-wrap:wrap}.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend b{display:inline-block;width:14px;height:2px;border-radius:1px}.legend b.dash{height:0;border-top:2px dashed}
+img{display:block;width:100%;border-radius:6px}.live img{cursor:pointer;max-width:760px;margin:0 auto 8px}
+.watch{display:none;grid-template-columns:minmax(0,420px) 1fr;gap:20px;margin-bottom:16px}@media (max-width:760px){.watch{grid-template-columns:1fr}}
+.watch img{image-rendering:pixelated;aspect-ratio:1;background:#000}
+.bb{display:grid;grid-template-columns:70px 1fr 44px;gap:8px;align-items:center;font-size:12px;color:var(--fg2);margin:3px 0;font-variant-numeric:tabular-nums}
+.bb .t{height:8px;background:var(--line);border-radius:4px;overflow:hidden}.bb .t div{height:100%}
+details{margin-top:28px}summary{cursor:pointer;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--mut);font-weight:500}td:first-child,th:first-child{text-align:left}.scroll{overflow-x:auto}a{color:var(--s1)}
+</style></head><body><main>
+<header><div><h1>Fine-tuning the pretrained policy on live slither.io</h1>
+<div class="cfg">PPO + live world-model + danger-foresight fine-tuning of s150p (top 3 blocks) · KL to pretrained · 0.1 s decisions · reward: +1/s alive, −10 death, danger shaping, + Δ log length</div></div>
+<div class="pill" id="status"><i></i><span>loading</span></div></header>
+
+<div class="kpis" id="kpis"></div>
+
+<h2>Survival vs pretrained</h2>
+<div class="grid">
+ <div class="card"><h3>Survival</h3><p>Median seconds alive per 10 min.</p>
+  <div class="legend"><span><b style="background:var(--s1)"></b>median survival</span><span><b class="dash" style="border-color:var(--base)"></b>pretrained</span></div><div class="chart"><canvas id="c_surv"></canvas></div></div>
+ <div class="card"><h3>Episode return</h3><p>Mean per 10 min. Dashed = pretrained policy.</p>
+  <div class="legend"><span><b style="background:var(--s1)"></b>eval</span><span><b style="background:var(--s2)"></b>sampled</span><span><b class="dash" style="border-color:var(--s1)"></b>pretrained, eval</span><span><b class="dash" style="border-color:var(--s2)"></b>pretrained, sampled</span></div><div class="chart"><canvas id="c_ret"></canvas></div></div>
+</div>
+
+<h2>Training health</h2>
+<div class="grid">
+ <div class="card"><h3>KL to pretrained</h3><p>Nats per decision. Should rise slowly.</p>
+  <div class="chart" style="margin-top:22px"><canvas id="c_kl"></canvas></div></div>
+ <div class="card"><h3>Critic explained variance</h3><p>Higher = more reliable advantages.</p>
+  <div class="chart" style="margin-top:22px"><canvas id="c_ev"></canvas></div></div>
+</div>
+
+<h2>Live <span style="text-transform:none;letter-spacing:0;font-weight:400">· click a game</span></h2>
+<div class="card watch" id="watch"><div><img id="wimg" alt="selected session, agent's view"></div>
+ <div><div style="display:flex;justify-content:space-between;align-items:baseline"><h3 id="wt">Session</h3><a href="#" id="wclose">close</a></div>
+ <div id="wstat" style="margin:4px 0 12px"></div>
+ <div class="legend"><span><b style="background:var(--s1)"></b>current</span><span><b class="dash" style="border-color:var(--base)"></b>pretrained</span><span><b style="background:var(--fg)"></b>taken</span></div>
+ <canvas id="rose" width="440" height="250" style="width:100%;max-width:440px;display:block"></canvas>
+ <div style="font-size:12px;color:var(--fg2);margin:12px 0 4px">P(boost)</div><div id="boost"></div></div></div>
+<div class="card live" id="live"></div>
+
+<details><summary>Diagnostics</summary>
+ <div class="grid" style="margin-top:12px">
+  <div class="card"><h3>Learner</h3><div class="scroll"><table id="ltab"></table></div></div>
+  <div class="card"><h3>System</h3><div class="scroll"><table id="sys"></table></div></div>
+ </div>
+ <div class="grid" style="margin-top:16px">
+  <div class="card"><h3>Proxies</h3><div class="scroll"><table id="ptab"></table></div></div>
+  <div class="card"><h3>Recent episodes</h3><div class="scroll"><table id="etab"></table></div></div>
+ </div>
+</details>
+</main>
+<script>
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const f=(x,d=2)=>x==null||!isFinite(x)?'–':(+x).toFixed(d);
+const mean=a=>a.length?a.reduce((s,x)=>s+x,0)/a.length:NaN, med=a=>{if(!a.length)return NaN;const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2};
+async function get(p){try{const r=await fetch(p+'?'+Date.now(),{cache:'no-store'});return r.ok?r:null}catch(e){return null}}
+async function jl(p){const r=await get(p);if(!r)return[];return (await r.text()).trim().split('\n').map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean)}
+async function js(p){const r=await get(p);return r?r.json().catch(()=>null):null}
+const charts={};
+function chart(id,sets,o={}){
+ const ds=sets.map(s=>({label:s.l,data:s.d,borderColor:s.c,backgroundColor:s.c,borderWidth:s.dash?1.5:2,borderDash:s.dash?[4,3]:[],pointRadius:0,pointHoverRadius:4,tension:.25,spanGaps:true}));
+ const ax={grid:{color:css('--line'),drawTicks:false},border:{display:false},ticks:{color:css('--mut'),padding:6,maxTicksLimit:6,font:{size:11}}};
+ const opt={animation:false,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+  plugins:{legend:{display:false},tooltip:{backgroundColor:css('--surface'),titleColor:css('--fg'),bodyColor:css('--fg2'),borderColor:css('--line'),borderWidth:1,
+   callbacks:{title:i=>i.length?`${f(i[0].parsed.x,2)} h`:'',label:c=>` ${c.dataset.label}: ${f(c.parsed.y,o.dp??2)}`}}},
+  scales:{x:{type:'linear',min:0,...ax,title:{display:true,text:'hours',color:css('--mut'),font:{size:11}}},y:{...ax,min:o.ymin,max:o.ymax,title:{display:!!o.y,text:o.y||'',color:css('--mut'),font:{size:11}}}}};
+ if(charts[id]){charts[id].data.datasets=ds;charts[id].update('none');return}
+ charts[id]=new Chart(document.getElementById(id),{type:'line',data:{datasets:ds},options:opt});
+}
+function bins(eps,t0,key,agg,W=600){const m=new Map();for(const e of eps){const k=Math.floor((e.t-t0)/W);(m.get(k)||m.set(k,[]).get(k)).push(e[key])}
+ return [...m.entries()].sort((a,b)=>a[0]-b[0]).filter(([,v])=>v.length>=5).map(([k,v])=>({x:(k+.5)*W/3600,y:agg(v)}))}
+let ACTORS=[];
+async function tick(){
+ const [E,L,S]=await Promise.all([jl('data/episodes.jsonl'),jl('data/learner.jsonl'),js('data/sys.json')]);
+ ACTORS=(await Promise.all([0,1,2].map(r=>js(`data/actor_${r}.json`)))).filter(Boolean);
+ const live=document.getElementById('live');
+ if(live.children.length!==ACTORS.length){live.innerHTML=ACTORS.map(a=>`<img data-rank="${a.rank}" alt="latest frames, actor ${a.rank}">`).join('');
+  [...live.children].forEach(im=>im.onclick=e=>{const a=ACTORS.find(x=>x.rank==+im.dataset.rank);if(!a)return;const r=im.getBoundingClientRect(),T=im.naturalWidth/8;
+   const i=Math.floor((e.clientY-r.top)*im.naturalHeight/r.height/T)*8+Math.floor((e.clientX-r.left)*im.naturalWidth/r.width/T);if(a.sessions[i])watch(a.sessions[i].sid)})}
+ [...live.children].forEach(im=>im.src=`data/live_${im.dataset.rank}.jpg?${Date.now()}`);
+ if(!E.length&&!ACTORS.length)return;
+ const now=Date.now()/1000, t0=E.length?E[0].t:now, hrs=(now-t0)/3600;
+ const B=E.filter(e=>e.pupd===0), N=E.filter(e=>e.pupd>0);
+ const bE=B.filter(e=>e.greedy), bS=B.filter(e=>!e.greedy), nE=N.filter(e=>e.greedy);
+ const sess=ACTORS.flatMap(a=>a.sessions), alive=sess.filter(s=>s.alive).length, dps=ACTORS.reduce((s,a)=>s+a.dps,0);
+ const age=ACTORS.length?now-Math.min(...ACTORS.map(a=>a.t)):1e9, l=L[L.length-1]||{};
+ const st=document.getElementById('status'), ok=age<60&&alive>sess.length*0.4;
+ st.querySelector('i').style.background=ok?css('--good'):css('--bad');
+ st.querySelector('span').textContent=ok?`running · ${f(hrs,1)} h · ${l.training_policy?'training policy':'warm-up: value only'} · updated ${f(age,0)} s ago`:`stale or degraded · actors updated ${f(age,0)} s ago`;
+ const last=(a,k,n=100)=>a.slice(-n).map(e=>e[k]);
+ const K=[['Median survival (last 200)',f(med(last(N.length?N:B,'seconds',200)),0)+' s',`pretrained ${f(med(B.map(e=>e.seconds)),0)} s`],
+  ['Eval growth, log length (last 100)',f(mean(last(nE.length?nE:bE,'ret')),2),`pretrained ${f(mean(bE.map(e=>e.ret)),2)}`],
+  ['Median final length (last 200)',f(med(last(N.length?N:B,'final',200)),0),`pretrained ${f(med(B.map(e=>e.final)),0)} · best ever ${E.length?Math.max(...E.map(e=>e.best)):'–'}`],
+  ['Experience',`${f(dps,0)}/s`,`decisions · ${alive}/${sess.length} games live`],
+  ['Policy updates',(l.pupd??0).toLocaleString(),`${l.it??0} PPO iterations · KL ${f(l.kl_pretrained,3)}`]];
+ document.getElementById('kpis').innerHTML=K.map(([a,b,c])=>`<div class="k"><div class="l">${a}</div><div class="v">${b}</div><div class="d">${c}</div></div>`).join('');
+ const end=Math.max(hrs,.25), base=v=>isFinite(v)?[{x:0,y:v},{x:end,y:v}]:[];
+ chart('c_ret',[{l:'eval',d:bins(E.filter(e=>e.greedy),t0,'ret',mean),c:css('--s1')},{l:'sampled',d:bins(E.filter(e=>!e.greedy),t0,'ret',mean),c:css('--s2')},
+  {l:'pretrained, eval',d:base(mean(bE.map(e=>e.ret))),c:css('--s1'),dash:1},{l:'pretrained, sampled',d:base(mean(bS.map(e=>e.ret))),c:css('--s2'),dash:1}],{y:'return'});
+ chart('c_surv',[{l:'median survival (s)',d:bins(E,t0,'seconds',med),c:css('--s1')},{l:'pretrained',d:base(med(B.map(e=>e.seconds))),c:css('--base'),dash:1}],{y:'seconds',dp:0,ymin:0});
+ const lx=x=>(x.t-t0)/3600, LP=L.filter(x=>x.t>=t0);
+ chart('c_kl',[{l:'KL to pretrained',d:LP.map(x=>({x:lx(x),y:x.kl_pretrained})),c:css('--s1')}],{y:'nats',dp:3,ymin:0});
+ chart('c_ev',[{l:'explained variance',d:LP.map(x=>({x:lx(x),y:x.explained_var})),c:css('--s1')}],{y:'explained variance',ymax:1});
+ document.getElementById('ltab').innerHTML=l.it?[['phase',l.training_policy?'policy + value':'value only (warm-up)'],['iteration / batch',`${l.it} / ${(l.batch||0).toLocaleString()}`],['policy loss',f(l.pl,4)],['value loss',f(l.vl,4)],
+  ['clip fraction',f(l.clipfrac,3)],['entropy (nats)',f(l.entropy,2)],['stale fragments dropped',l.stale_total??0],['steps trained',(l.steps_total||0).toLocaleString()]].map(([a,b])=>`<tr><td>${a}</td><td>${b}</td></tr>`).join(''):'<tr><td>waiting for the first batch</td></tr>';
+ if(S){const g=S.gpus||[];document.getElementById('sys').innerHTML=`<tr><th>GPU</th><th style="text-align:left">role</th><th>util</th><th>memory</th></tr>`+g.map(x=>`<tr><td>${x.i}</td><td style="text-align:left">${x.i<3?'actor '+x.i:'learner (fine-tune)'}</td><td>${x.util}%</td><td>${f(x.mem/1024,1)} GB</td></tr>`).join('')+`<tr><td>CPU load</td><td></td><td>${f(S.load,0)} / ${S.cpus}</td><td></td></tr>`}
+ const P={};for(const s of sess){const p=P[s.proxy]=P[s.proxy]||{a:0,n:0,e:0,x:0,err:''};p.n++;p.a+=s.alive?1:0;p.e+=s.episodes;p.x+=s.fails;if(s.err)p.err=s.err}
+ document.getElementById('ptab').innerHTML='<tr><th>proxy</th><th>live</th><th>episodes</th><th>failures</th><th style="text-align:left">last error</th></tr>'+Object.entries(P).map(([k,p])=>`<tr><td>p${k}</td><td>${p.a}/${p.n}</td><td>${p.e}</td><td>${p.x}</td><td style="text-align:left;color:var(--mut)">${p.err.slice(0,40)}</td></tr>`).join('');
+ document.getElementById('etab').innerHTML='<tr><th>time</th><th>session</th><th>policy</th><th>seconds</th><th>length</th><th>return</th></tr>'+E.slice(-12).reverse().map(e=>`<tr><td>${new Date(e.t*1000).toLocaleTimeString()}</td><td>s${e.sid}${e.greedy?' eval':''}</td><td>${e.pupd?'v'+e.ver:'pretrained'}</td><td>${f(e.seconds,0)}</td><td>${e.start} → ${e.final}</td><td>${f(e.ret,2)}</td></tr>`).join('');
+}
+let W=null,WT=null;
+document.getElementById('wclose').onclick=e=>{e.preventDefault();W=null;clearInterval(WT);document.getElementById('watch').style.display='none'};
+function watch(sid){W=sid;clearInterval(WT);const b=document.getElementById('watch');b.style.display='grid';b.scrollIntoView({behavior:'smooth',block:'start'});wtick();WT=setInterval(wtick,250)}
+let CEN=null;
+function rose(d,a){const cv=document.getElementById('rose'),x=cv.getContext('2d'),W=cv.width,H=cv.height,cx=W/2,cy=H-18,R0=26,R1=Math.min(cx-30,cy-14);
+ x.clearRect(0,0,W,H);const n=d.turn.length,mx=Math.max(...d.turn,...d.turn0,1e-6),ang=k=>Math.PI*(k+.5)/n;   // bin 0 = hardest right -> drawn at the right
+ const pt=(k,r)=>[cx+r*Math.cos(ang(k)),cy-r*Math.sin(ang(k))];
+ x.strokeStyle=css('--line');x.lineWidth=1;for(const f of [.5,1]){x.beginPath();x.arc(cx,cy,R0+(R1-R0)*f,Math.PI,0);x.stroke()}
+ const wedge=(k,p,fill)=>{const r=R0+(R1-R0)*p/mx,a0=Math.PI*k/n+.012,a1=Math.PI*(k+1)/n-.012;x.beginPath();x.arc(cx,cy,r,-a1,-a0);x.arc(cx,cy,R0,-a0,-a1,true);x.closePath();fill()};
+ for(let k=0;k<n;k++)wedge(k,d.turn[k],()=>{x.fillStyle=(a!=null&&(a>>1)==k)?css('--fg'):css('--s1');x.fill()});
+ x.setLineDash([3,3]);x.strokeStyle=css('--base');x.lineWidth=1.5;x.beginPath();
+ for(let k=0;k<n;k++){const r=R0+(R1-R0)*d.turn0[k]/mx,[px,py]=pt(k,r);k?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();x.setLineDash([]);
+ x.fillStyle=css('--mut');x.font='11px system-ui';x.textAlign='center';
+ if(CEN)for(const k of [0,8,16,23,31]){const[px,py]=pt(k,R1+14);x.fillText(Math.abs(CEN[k])<0.5?"straight":`${CEN[k]>0?"L":"R"} ${Math.abs(CEN[k]).toFixed(0)}°`,px,py+4)}
+ x.fillText('turn per 0.1 s',cx,cy+14)}
+async function wtick(){if(W==null)return;const sid=W,im=new Image();im.onload=()=>{if(W==sid)document.getElementById('wimg').src=im.src};im.src=`data/s/${sid}.jpg?${Date.now()}`;
+ if(!CEN){const m=await js('data/meta.json');if(m)CEN=m.turn_centers_deg}
+ const d=await js(`data/s/${sid}.json`);if(!d||W!=sid)return;const age=Date.now()/1000-d.t;
+ document.getElementById('wt').textContent=`Session ${sid}${d.greedy?' · eval':''}${d.alive?'':' · respawning'}${age>3?` · stale ${f(age,0)} s`:''}`;
+ document.getElementById('wstat').innerHTML=`<span style="font-size:26px;font-weight:600;font-variant-numeric:tabular-nums">${d.score}</span> <span style="font-size:12px;color:var(--fg2)">length · ${f(d.ep_s,0)} s alive</span>`;
+ if(!d.dist)return;rose(d.dist,d.a);
+ const bar=(l,p,c)=>`<div class="bb"><span>${l}</span><div class="t"><div style="width:${100*p}%;background:${c}"></div></div><span>${f(100*p,0)}%</span></div>`;
+ document.getElementById('boost').innerHTML=bar('current',d.dist.boost,css('--s1'))+bar('pretrained',d.dist.boost0,css('--base'))+
+  (d.danger!=null?`<div style="font-size:12px;color:var(--fg2);margin:12px 0 4px">Danger (reward shaping only)</div>`+bar('danger',d.danger,css('--bad')):'')}
+tick();setInterval(tick,15000);
+</script></body></html>

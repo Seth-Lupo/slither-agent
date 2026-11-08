@@ -1,0 +1,27 @@
+# allowlist: source code only
+*
+!*/
+!*.py
+!*.sh
+!*.js
+!*.html
+!*.md
+!requirements.txt
+!nsh
+!.gitignore
+# never: data, checkpoints, envs, logs, private material, credentials
+archive/
+proposal/
+.env
+**/.venv/
+**/browsers/
+**/__pycache__/
+**/dash/data/
+mg/dash/
+mg/dash_pol/
+mg/ckpt_backup/
+mg/labels/
+rl/cf/
+**/*creds*
+**/*token*
+**/*proxies*

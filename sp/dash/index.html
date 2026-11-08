@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slither Self-Play</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#111827;--ink2:#4b5563;--mute:#9ca3af;--line:#e5e7eb;--cur:#0f9d6b;--snap:#d97706;--accent:#2563eb;--bad:#dc2626;--good:#0f9d6b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0e13;--card:#131820;--ink:#e5e7eb;--ink2:#9ca3af;--mute:#6b7280;--line:#232a35;--cur:#34d399;--snap:#f59e0b;--accent:#60a5fa;--bad:#f87171;--good:#34d399}}
+:root[data-theme="dark"]{--bg:#0b0e13;--card:#131820;--ink:#e5e7eb;--ink2:#9ca3af;--mute:#6b7280;--line:#232a35;--cur:#34d399;--snap:#f59e0b;--accent:#60a5fa;--bad:#f87171;--good:#34d399}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:20px;margin:0;font-weight:650}h2{font-size:13px;margin:0 0 10px;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:.04em}
+.sub{color:var(--ink2);font-size:13px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.grid{display:grid;gap:12px}.k6{grid-template-columns:repeat(6,1fr)}.c2{grid-template-columns:1fr 1fr}.c3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:900px){.k6{grid-template-columns:repeat(3,1fr)}.c3{grid-template-columns:1fr}}@media(max-width:640px){.k6{grid-template-columns:repeat(2,1fr)}.c2{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
+.kpi .l{font-size:12px;color:var(--ink2)}.kpi .v{font-size:24px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}.kpi .d{font-size:12px;color:var(--mute);margin-top:2px}
+section{margin-top:18px}svg{display:block;width:100%;height:auto}.legend{display:flex;gap:14px;font-size:12px;color:var(--ink2);margin-bottom:6px}
+.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}
+.imgs img{width:100%;border-radius:8px;display:block;background:#000;image-rendering:pixelated}.cap{font-size:12px;color:var(--ink2);margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}td{padding:5px 0;border-bottom:1px solid var(--line)}td:last-child{text-align:right;color:var(--ink)}td:first-child{color:var(--ink2)}
+.tip{position:fixed;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.15);z-index:9}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div><div class="sub" style="margin-bottom:4px"><a href="../" style="color:var(--accent)">← home</a> · <a href="../live/" style="color:var(--accent)">live games</a></div><h1>Slither self-play</h1><div class="sub">PPO on a GPU slither simulator · current policy vs its own past snapshots · AGGRESSIVE · 960k snakes · reward: +3·log(victim length) per kill, +1·Δlog length, −6 death, length decays 3%/min, scarce food</div></div>
+  <div class="sub" id="status">loading…</div>
+</header>
+
+<div class="grid k6" id="kpis"></div>
+
+<section>
+  <div class="grid c2">
+    <div class="card"><h2>Survival time (s, mean per life)</h2><div class="legend"><span><i style="background:var(--cur)"></i>current policy</span><span><i style="background:var(--snap)"></i>past snapshots</span></div><div id="ch_surv"></div></div>
+    <div class="card"><h2>Peak length per life (mean)</h2><div class="legend"><span><i style="background:var(--cur)"></i>current policy</span><span><i style="background:var(--snap)"></i>past snapshots</span></div><div id="ch_peak"></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="grid c2 imgs">
+    <div class="card"><h2>Arena 0, live · click any snake</h2><div style="position:relative"><img id="arena" alt="arena" style="cursor:crosshair"><canvas id="mark" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas></div><div class="cap"><span style="color:var(--cur)">■</span> current policy &nbsp;<span style="color:var(--snap)">■</span> past snapshots &nbsp;□ heads &nbsp;purple = food &nbsp;<span style="color:#facc15">○</span> selected</div></div>
+    <div class="card"><h2>Selected snake's view</h2><canvas id="eye" width="256" height="256" style="width:100%;border-radius:8px;background:#000;image-rendering:pixelated;display:block"></canvas><div class="cap" id="eyecap">64×64 heading-up grid: enemy bodies (green, brighter = bigger), own body (blue), heads (white), food (purple), map edge (red), head (yellow)</div><table id="snakes" style="margin-top:8px"></table></div>
+  </div>
+</section>
+
+<section>
+  <h2>Training health</h2>
+  <div class="grid c3">
+    <div class="card"><h2>Policy entropy</h2><div id="ch_ent"></div></div>
+    <div class="card"><h2>Value explained variance</h2><div id="ch_ev"></div></div>
+    <div class="card"><h2>Throughput (decisions / s)</h2><div id="ch_dps"></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="grid c2">
+    <div class="card"><h2>League &amp; deaths</h2><table id="league"></table></div>
+    <div class="card"><h2>System</h2><table id="sys"></table></div>
+  </div>
+</section>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const $=id=>document.getElementById(id);
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt=(x,d=1)=>x==null||isNaN(x)?"–":Number(x).toFixed(d);
+const big=x=>x==null?"–":x>=1e9?(x/1e9).toFixed(2)+"B":x>=1e6?(x/1e6).toFixed(1)+"M":x>=1e3?(x/1e3).toFixed(1)+"k":String(Math.round(x));
+const ago=t=>{const s=Date.now()/1000-t;return s<90?Math.round(s)+"s ago":s<5400?Math.round(s/60)+" min ago":(s/3600).toFixed(1)+" h ago"};
+function chart(el,S,keys,cols,opt={}){
+  const W=520,H=170,L=40,R=8,T=8,B=22; const pts=S.filter(r=>keys.some(k=>r[k]!=null));
+  if(pts.length<2){el.innerHTML='<div class="sub">waiting for data…</div>';return}
+  const xs=pts.map(r=>r.decisions/1e9); const x0=Math.min(...xs),x1=Math.max(...xs)||1;
+  let ys=[];keys.forEach(k=>pts.forEach(r=>{if(r[k]!=null)ys.push(r[k])}));
+  let y0=opt.min!=null?opt.min:Math.min(...ys),y1=Math.max(...ys);if(y1-y0<1e-9)y1=y0+1;const pad=(y1-y0)*.06;y1+=pad;if(opt.min==null)y0-=pad;
+  const X=x=>L+(x-x0)/((x1-x0)||1)*(W-L-R),Y=y=>T+(1-(y-y0)/(y1-y0))*(H-T-B);
+  let g=`<svg viewBox="0 0 ${W} ${H}">`;const line=css('--line'),mute=css('--mute');
+  for(let i=0;i<=3;i++){const y=y0+(y1-y0)*i/3;g+=`<line x1="${L}" x2="${W-R}" y1="${Y(y)}" y2="${Y(y)}" stroke="${line}"/><text x="${L-6}" y="${Y(y)+4}" font-size="10" fill="${mute}" text-anchor="end">${opt.pct?(y*100).toFixed(0)+'%':Math.abs(y)>=1000?big(y):fmt(y,Math.abs(y)<10?2:0)}</text>`}
+  g+=`<text x="${W-R}" y="${H-5}" font-size="10" fill="${mute}" text-anchor="end">decisions (B) ${fmt(x1,2)}</text><text x="${L}" y="${H-5}" font-size="10" fill="${mute}">${fmt(x0,2)}</text>`;
+  keys.forEach((k,i)=>{const p=pts.filter(r=>r[k]!=null).map(r=>`${X(r.decisions/1e9).toFixed(1)},${Y(r[k]).toFixed(1)}`).join(' ');g+=`<polyline points="${p}" fill="none" stroke="${css(cols[i])}" stroke-width="2" stroke-linejoin="round"/>`});
+  g+=`<rect x="${L}" y="${T}" width="${W-L-R}" height="${H-T-B}" fill="transparent" class="hit"/></svg>`;el.innerHTML=g;
+  const svg=el.querySelector('svg'),tip=$('tip');
+  svg.onmousemove=e=>{const b=svg.getBoundingClientRect();const x=x0+((e.clientX-b.left)/b.width*W-L)/(W-L-R)*(x1-x0);let best=pts[0];pts.forEach(r=>{if(Math.abs(r.decisions/1e9-x)<Math.abs(best.decisions/1e9-x))best=r});
+    tip.style.display='block';tip.style.left=(e.clientX+12)+'px';tip.style.top=(e.clientY+12)+'px';
+    tip.innerHTML=`<b>${fmt(best.decisions/1e9,3)}B decisions</b> · update ${best.upd}<br>`+keys.map((k,i)=>`<span style="color:${css(cols[i])}">■</span> ${opt.names?opt.names[i]:k}: ${opt.pct?fmt(best[k]*100,1)+'%':fmt(best[k],2)}`).join('<br>')};
+  svg.onmouseleave=()=>tip.style.display='none';
+}
+function kpi(l,v,d){return `<div class="card kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d||''}</div></div>`}
+async function j(u){const r=await fetch(u+'?'+Date.now());if(!r.ok)throw 0;return r.json()}
+async function tick(){
+  let now,S,sys;try{now=await j('data/now.json')}catch(e){$('status').innerHTML='<span class="dot" style="background:var(--bad)"></span>no data yet';return}
+  try{S=await j('data/series.json')}catch(e){S=[]}try{sys=await j('data/sys.json')}catch(e){}try{AR=await j('data/arena.json')}catch(e){}
+  const age=Date.now()/1000-now.t,live=age<90;
+  $('status').innerHTML=`<span class="dot" style="background:${live?'var(--good)':'var(--bad)'}"></span>${live?'training':'stale'} · updated ${ago(now.t)} · running ${(now.elapsed/3600).toFixed(1)} h`;
+  const first=S.find(r=>r.surv_cur!=null);const d=first&&now.surv_cur!=null?now.surv_cur-first.surv_cur:null;
+  const rel=now.surv_snap>0?now.surv_cur/now.surv_snap:null;
+  $('kpis').innerHTML=
+    kpi('Survival, current policy',fmt(now.surv_cur)+' s',`median ${fmt(now.surv_cur_med)} s · p90 ${fmt(now.surv_cur_p90)} s`)+
+    kpi('vs past snapshots',rel?fmt(rel,2)+'×':'–',`snapshots live ${fmt(now.surv_snap)} s`)+
+    kpi('Peak length per life',fmt(now.peak_cur,0),`biggest snake now ${fmt(now.biggest,0)}`)+
+    kpi('Experience',big(now.decisions),`${fmt(now.decisions*0.1/3600/24,1)} game-days`)+
+    kpi('Throughput',big(now.dps)+'/s',`${big(now.snakes)} snakes · ${big(now.arenas)} arenas · ${now.gpus} GPUs`)+
+    kpi('Policy updates',big(now.upd),`every ${fmt(now.iter_s)} s · ${now.pool} snapshots in league`);
+  chart($('ch_surv'),S,['surv_cur','surv_snap'],['--cur','--snap'],{names:['current','snapshots']});
+  chart($('ch_peak'),S,['peak_cur','peak_snap'],['--cur','--snap'],{names:['current','snapshots']});
+  chart($('ch_ent'),S,['entropy'],['--accent'],{names:['entropy']});
+  chart($('ch_ev'),S,['explained_var'],['--accent'],{names:['explained var']});
+  chart($('ch_dps'),S,['dps'],['--accent'],{names:['decisions/s'],min:0});
+  const kc=now.kills_by_cur_of_snap,ks=now.kills_by_snap_of_cur;
+  $('league').innerHTML=`<tr><td>Lives ended this update (current / snapshots)</td><td>${now.ep_cur} / ${now.ep_snap}</td></tr>
+   <tr><td>Snapshots killed by current · current killed by snapshots</td><td>${kc} · ${ks}</td></tr>
+   <tr><td>Deaths at the map edge (current)</td><td>${fmt(now.edge_frac*100,1)}%</td></tr>
+   <tr><td>PPO: KL · clip fraction</td><td>${fmt(now.kl,4)} · ${fmt(now.clipfrac,3)}</td></tr>
+   <tr><td>Value loss · policy loss</td><td>${fmt(now.vl,3)} · ${fmt(now.pl,3)}</td></tr>
+   <tr><td>Model</td><td>IMPALA CNN · ${fmt(now.params/1e6,1)}M params</td></tr>`;
+  let s=`<tr><td>Update time (rollout · train)</td><td>${fmt(now.roll_s)} s · ${fmt(now.train_s)} s</td></tr><tr><td>Transitions trained per update</td><td>${big(now.n_train)}</td></tr>`;
+  if(sys&&sys.gpus)s+=`<tr><td>GPU util</td><td>${sys.gpus.map(g=>g.util+'%').join(' ')}</td></tr><tr><td>GPU memory (GB)</td><td>${sys.gpus.map(g=>Math.round(g.mem/1024)).join(' ')}</td></tr>`;
+  const hf=now.hf||{};s+=`<tr><td>Hugging Face backup</td><td>${hf.t?(hf.ok?'ok, ':'FAILED, ')+ago(hf.t):'first at 30 min'}</td></tr>`;
+  $('sys').innerHTML=s;
+  $('arena').src='data/arena.jpg?'+Date.now();
+  const sp=new Image();sp.onload=()=>{SHEET=sp;drawSel()};sp.src='data/eyes.png?'+Date.now();
+  if(AR&&AR.snakes){if(SEL==null||!AR.snakes[SEL]){const c=AR.snakes.filter(s=>s.model==0);SEL=(c.length?c:AR.snakes).reduce((a,b)=>b.age_s>a.age_s?b:a).i}
+    const top=[...AR.snakes].sort((a,b)=>b.score-a.score).slice(0,8);
+    $('snakes').innerHTML='<tr><td>Longest snakes in arena 0 (click)</td><td></td></tr>'+top.map(s=>`<tr style="cursor:pointer" onclick="SEL=${s.i};drawSel()"><td><span style="color:${s.model==0?'var(--cur)':'var(--snap)'}">■</span> #${s.i}${s.i==SEL?' ← viewing':''}</td><td>length ${fmt(s.score,0)} · ${fmt(s.age_s,0)} s · ${s.kills} kills</td></tr>`).join('')}
+  drawSel();
+}
+let AR=null,SEL=null,SHEET=null;
+function drawSel(){
+  if(!AR)return;const s=AR.snakes[SEL];if(!s)return;
+  const cv=$('eye'),cx=cv.getContext('2d');cx.imageSmoothingEnabled=false;
+  if(SHEET){cx.drawImage(SHEET,(SEL%10)*64,Math.floor(SEL/10)*64,64,64,0,0,256,256)}
+  $('eyecap').innerHTML=`Snake #${s.i} · ${s.model==0?'<b style="color:var(--cur)">current policy</b>':'<b style="color:var(--snap)">past snapshot</b>'} · alive ${fmt(s.age_s)} s · length ${fmt(s.score,0)} · kills ${s.kills}${s.boost?' · boosting':''}<br>64×64 heading-up view (ahead = up): enemy bodies green (brighter = bigger), own body blue, heads white, food purple, edge red`;
+  const m=$('mark'),im=$('arena');m.width=im.clientWidth;m.height=im.clientHeight;const g=m.getContext('2d');g.clearRect(0,0,m.width,m.height);
+  const k=m.width/AR.G;g.strokeStyle='#facc15';g.lineWidth=2;g.beginPath();g.arc(s.x*k,s.y*k,9,0,7);g.stroke();
+  g.beginPath();g.moveTo(s.x*k,s.y*k);g.lineTo(s.x*k+16*Math.cos(s.ang),s.y*k+16*Math.sin(s.ang));g.stroke();
+}
+document.addEventListener('DOMContentLoaded',()=>{});
+$('arena').addEventListener('click',e=>{if(!AR)return;const b=e.target.getBoundingClientRect();const x=(e.clientX-b.left)/b.width*AR.G,y=(e.clientY-b.top)/b.height*AR.G;
+  let best=null,bd=1e9;AR.snakes.forEach(s=>{const d=Math.hypot(s.x-x,s.y-y);if(d<bd){bd=d;best=s}});if(best){SEL=best.i;drawSel();tick()}});
+window.addEventListener('resize',drawSel);
+tick();setInterval(tick,4000);
+</script>
+</body>
+</html>

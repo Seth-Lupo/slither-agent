@@ -1,0 +1,3 @@
+#!/bin/bash
+# Local: run a command on the GPU node through Slurm (works even when direct ssh to the node hangs).   ./nsh 'cmd'
+timeout ${T:-120} ssh -F ~/video-gen/.ssh_config vg-login "timeout $(( ${T:-120} - 15 )) srun --jobid=${JOB:-6956433} --overlap -N1 -n1 bash -c $(printf '%q' "$1")" 2>&1 | grep -v '^\*\*'
